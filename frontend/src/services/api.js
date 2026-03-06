@@ -28,6 +28,16 @@ export async function deletePDF(filename) {
   return res.json();
 }
 
+export async function summarizePDF() {
+  const res = await fetch(`${BASE_URL}/summarize`, { method: "POST" });
+
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail || "요약 실패");
+  }
+  return res.json();
+}
+
 export async function askQuestion(question) {
   const res = await fetch(`${BASE_URL}/chat`, {
     method: "POST",

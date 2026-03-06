@@ -126,6 +126,34 @@ async def delete_pdf(filename: str):
     return {"message": f"{filename} 삭제 완료"}
 
 
+@app.post("/summarize")
+async def summarize():
+    if qa_chain is None:
+        raise HTTPException(status_code=400, detail="먼저 PDF를 업로드해주세요.")
+
+    pdfs = [f for f in os.listdir(DATA_DIR) if f.endswith(".pdf")]
+    all_docs = []
+    for pdf_name in pdfs:
+        all_docs.extend(load_and_split(os.path.join(DATA_DIR, pdf_name)))
+
+    # 앞부분 청크만 사용해 요약 (너무 길면 토큰 초과)
+    sample_text = "\n\n".join(doc.page_content for doc in all_docs[:20])
+
+    from langchain_anthropic import ChatAnthropic
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_core.output_parsers import StrOutputParser
+
+    llm = ChatAnthropic(model="claude-sonnet-4-6", temperature=0)
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", "다음 문서 내용을 한국어로 핵심만 간결하게 요약해주세요. 주요 주제, 핵심 내용, 중요 포인트를 포함하세요."),
+        ("human", "{text}"),
+    ])
+    chain = prompt | llm | StrOutputParser()
+    summary = chain.invoke({"text": sample_text})
+
+    return {"summary": summary}
+
+
 @app.get("/files")
 def list_files():
     pdfs = [f for f in os.listdir(DATA_DIR) if f.endswith(".pdf")]

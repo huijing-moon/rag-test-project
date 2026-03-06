@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import Message from "./Message";
-import { askQuestion } from "../services/api";
+import { askQuestion, summarizePDF } from "../services/api";
 
 export default function ChatBox({ ready }) {
   const [messages, setMessages] = useState([]);
@@ -36,6 +36,20 @@ export default function ChatBox({ ready }) {
     }
   }
 
+  async function handleSummarize() {
+    if (loading) return;
+    setLoading(true);
+    setMessages((prev) => [...prev, { role: "user", content: "📋 문서 요약해줘" }]);
+    try {
+      const data = await summarizePDF();
+      setMessages((prev) => [...prev, { role: "assistant", content: data.summary }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, { role: "assistant", content: `❌ ${err.message}` }]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function handleKeyDown(e) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -47,9 +61,31 @@ export default function ChatBox({ ready }) {
     <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden" }}>
       {/* 메시지 목록 */}
       <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
-        {messages.length === 0 && (
+        {messages.length === 0 && ready && (
+          <div style={{ textAlign: "center", marginTop: "40px" }}>
+            <p style={{ color: "#94a3b8", fontSize: "14px", marginBottom: "12px" }}>
+              PDF 문서에 대해 질문하거나 요약을 요청하세요.
+            </p>
+            <button
+              onClick={handleSummarize}
+              disabled={loading}
+              style={{
+                padding: "8px 20px",
+                backgroundColor: "#f0fdf4",
+                color: "#16a34a",
+                border: "1px solid #bbf7d0",
+                borderRadius: "20px",
+                fontSize: "13px",
+                cursor: "pointer",
+              }}
+            >
+              📋 문서 요약하기
+            </button>
+          </div>
+        )}
+        {messages.length === 0 && !ready && (
           <div style={{ textAlign: "center", color: "#94a3b8", marginTop: "40px", fontSize: "14px" }}>
-            {ready ? "PDF 문서에 대해 질문하세요." : "먼저 PDF를 업로드해주세요."}
+            먼저 PDF를 업로드해주세요.
           </div>
         )}
         {messages.map((msg, i) => (
@@ -66,8 +102,29 @@ export default function ChatBox({ ready }) {
         padding: "12px 16px",
         borderTop: "1px solid #e2e8f0",
         display: "flex",
+        flexDirection: "column",
         gap: "8px",
       }}>
+        {ready && (
+          <button
+            onClick={handleSummarize}
+            disabled={loading}
+            style={{
+              alignSelf: "flex-start",
+              padding: "4px 12px",
+              backgroundColor: "#f0fdf4",
+              color: "#16a34a",
+              border: "1px solid #bbf7d0",
+              borderRadius: "12px",
+              fontSize: "12px",
+              cursor: loading ? "not-allowed" : "pointer",
+              opacity: loading ? 0.5 : 1,
+            }}
+          >
+            📋 요약
+          </button>
+        )}
+        <div style={{ display: "flex", gap: "8px" }}>
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -102,6 +159,7 @@ export default function ChatBox({ ready }) {
         >
           전송
         </button>
+        </div>
       </div>
     </div>
   );
