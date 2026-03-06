@@ -52,21 +52,31 @@ async def upload_pdf(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="PDF 파일만 업로드 가능합니다.")
 
     os.makedirs(DATA_DIR, exist_ok=True)
-    file_path = os.path.join(DATA_DIR, file.filename)
 
+    existing_pdfs = [f for f in os.listdir(DATA_DIR) if f.endswith(".pdf")]
+    if len(existing_pdfs) >= 2:
+        raise HTTPException(status_code=400, detail="최대 2개의 PDF만 업로드 가능합니다.")
+    if file.filename in existing_pdfs:
+        raise HTTPException(status_code=400, detail="이미 업로드된 파일입니다.")
+
+    file_path = os.path.join(DATA_DIR, file.filename)
     contents = await file.read()
     with open(file_path, "wb") as f:
         f.write(contents)
 
-    # 임베딩 생성 및 저장
-    docs = load_and_split(file_path)
-    vectorstore = create_vectorstore(docs)
+    # 전체 PDF로 벡터스토어 재구성
+    all_docs = []
+    for pdf_name in os.listdir(DATA_DIR):
+        if pdf_name.endswith(".pdf"):
+            all_docs.extend(load_and_split(os.path.join(DATA_DIR, pdf_name)))
+
+    vectorstore = create_vectorstore(all_docs)
     save_vectorstore(vectorstore, INDEX_PATH)
 
     retriever = get_retriever(vectorstore, k=3)
     qa_chain = create_qa_chain(retriever)
 
-    return {"message": f"{file.filename} 업로드 및 인덱싱 완료", "chunks": len(docs)}
+    return {"message": f"{file.filename} 업로드 및 인덱싱 완료", "chunks": len(all_docs)}
 
 
 @app.post("/chat")
@@ -90,6 +100,7 @@ async def chat(req: ChatRequest):
 @app.delete("/delete/{filename}")
 async def delete_pdf(filename: str):
     global qa_chain
+    import shutil
 
     file_path = os.path.join(DATA_DIR, filename)
     if not os.path.exists(file_path):
@@ -97,13 +108,28 @@ async def delete_pdf(filename: str):
 
     os.remove(file_path)
 
-    # FAISS 인덱스 삭제
-    import shutil
-    if os.path.exists(INDEX_PATH):
-        shutil.rmtree(INDEX_PATH)
+    remaining_pdfs = [f for f in os.listdir(DATA_DIR) if f.endswith(".pdf")]
+    if remaining_pdfs:
+        # 남은 PDF로 벡터스토어 재구성
+        all_docs = []
+        for pdf_name in remaining_pdfs:
+            all_docs.extend(load_and_split(os.path.join(DATA_DIR, pdf_name)))
+        vectorstore = create_vectorstore(all_docs)
+        save_vectorstore(vectorstore, INDEX_PATH)
+        retriever = get_retriever(vectorstore, k=3)
+        qa_chain = create_qa_chain(retriever)
+    else:
+        if os.path.exists(INDEX_PATH):
+            shutil.rmtree(INDEX_PATH)
+        qa_chain = None
 
-    qa_chain = None
     return {"message": f"{filename} 삭제 완료"}
+
+
+@app.get("/files")
+def list_files():
+    pdfs = [f for f in os.listdir(DATA_DIR) if f.endswith(".pdf")]
+    return {"files": pdfs}
 
 
 @app.get("/health")
